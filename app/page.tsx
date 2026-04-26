@@ -1,65 +1,488 @@
-import Image from "next/image";
+"use client"
+
+import { useEffect, useRef, useState } from "react"
+
+function createIframeHtml(sessionId: string) {
+  return `
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AgentSplit Test App</title>
+
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f4f6fb;
+        color: #161616;
+      }
+
+      header {
+        padding: 24px;
+        background: #111827;
+        color: white;
+        text-align: center;
+      }
+
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 32px 20px;
+      }
+
+      .hero {
+        background: white;
+        border-radius: 20px;
+        padding: 32px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        margin-bottom: 24px;
+      }
+
+      .hero h1 {
+        margin-top: 0;
+        font-size: 40px;
+      }
+
+      .hero p {
+        font-size: 18px;
+        line-height: 1.6;
+        color: #555;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .card {
+        background: white;
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+      }
+
+      .card h3 {
+        margin-top: 0;
+      }
+
+      button {
+        cursor: pointer;
+        border: none;
+        border-radius: 12px;
+        padding: 14px 18px;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .primary {
+        background: #2563eb;
+        color: white;
+      }
+
+      .secondary {
+        background: #e5e7eb;
+        color: #111827;
+      }
+
+      .danger {
+        background: #ef4444;
+        color: white;
+      }
+
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid #d1d5db;
+        font-size: 16px;
+      }
+
+      footer {
+        text-align: center;
+        padding: 24px;
+        color: #777;
+      }
+
+      .debug {
+        margin-top: 24px;
+        background: #111827;
+        color: #d1d5db;
+        padding: 16px;
+        border-radius: 14px;
+        font-size: 14px;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <h2>AgentSplit Demo Site</h2>
+      <p>Static HTML test page for SDK tracking</p>
+    </header>
+
+    <main>
+      <section class="hero">
+        <h1>Test campaign landing page</h1>
+        <p>
+          This page is made to test AgentSplit SDK events: page views, clicks,
+          form submits, custom events, task completion and task failure.
+        </p>
+
+        <button class="primary" id="ctaButton" data-testid="main-cta">
+          Start testing
+        </button>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h3>Variant info</h3>
+          <p id="variantText">Loading variant...</p>
+          <button class="secondary" id="changeRouteButton">
+            Simulate route change
+          </button>
+        </div>
+
+        <div class="card">
+          <h3>Custom event</h3>
+          <p>Click this button to send a manual SDK event.</p>
+          <button class="secondary" id="customEventButton">
+            Track custom event
+          </button>
+        </div>
+
+        <div class="card">
+          <h3>Task result</h3>
+          <p>Use these buttons to test campaign completion.</p>
+          <button class="primary" id="completeButton">
+            Complete task
+          </button>
+          <br /><br />
+          <button class="danger" id="failButton">
+            Fail task
+          </button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Feedback form</h3>
+
+        <form id="feedbackForm">
+          <input
+            name="email"
+            type="email"
+            placeholder="Email"
+            aria-label="Email"
+          />
+
+          <textarea
+            name="feedback"
+            rows="4"
+            placeholder="What did you think about this page?"
+            aria-label="Feedback"
+          ></textarea>
+
+          <button class="primary" type="submit">
+            Submit feedback
+          </button>
+        </form>
+      </section>
+
+      <section class="debug">
+        <strong>Debug info:</strong>
+        <pre id="debugOutput"></pre>
+      </section>
+    </main>
+
+    <footer>
+      AgentSplit SDK static test app
+    </footer>
+
+    <!-- Your SDK file -->
+    <script src="./peach-sdk.js"></script>
+
+    <script>
+      function getQueryParam(name) {
+        var params = new URLSearchParams(window.location.search)
+        return params.get(name)
+      }
+
+      function getOrCreateSessionId() {
+        var key = "agentsplit_session_id"
+        var existingSessionId = localStorage.getItem(key)
+
+        if (existingSessionId) {
+          return existingSessionId
+        }
+
+        var sessionId =
+          "session_" +
+          Date.now() +
+          "_" +
+          Math.random().toString(36).slice(2)
+
+        localStorage.setItem(key, sessionId)
+
+        return sessionId
+      }
+
+      var campaignId = getQueryParam("campaignId") || "demo-campaign"
+      var variant = getQueryParam("variant") || "A"
+      var sessionId = getQueryParam("sessionId") || getOrCreateSessionId()
+
+      var apiUrl = getQueryParam("apiUrl") || ""
+
+      document.getElementById("variantText").innerText =
+        "Current variant: " + variant
+
+      document.getElementById("debugOutput").innerText = JSON.stringify(
+        {
+          campaignId: campaignId,
+          sessionId: sessionId,
+          variant: variant,
+          apiUrl: apiUrl || "disabled, only postMessage/debug tracking"
+        },
+        null,
+        2
+      )
+
+      window.AgentSplit.init({
+        campaignId: campaignId,
+        sessionId: sessionId,
+        variant: variant,
+        apiUrl: apiUrl,
+        debug: true
+      })
+
+      document.getElementById("ctaButton").addEventListener("click", function () {
+        window.AgentSplit.track("cta_clicked", {
+          button: "start_testing"
+        })
+      })
+
+      document
+        .getElementById("customEventButton")
+        .addEventListener("click", function () {
+          window.AgentSplit.track("custom_test_event", {
+            source: "manual_button",
+            value: Math.floor(Math.random() * 100)
+          })
+        })
+
+      document
+        .getElementById("completeButton")
+        .addEventListener("click", function () {
+          window.AgentSplit.completeTask({
+            reason: "task_completed",
+            score: 100
+          })
+
+          alert("Task completed event sent")
+        })
+
+      document
+        .getElementById("failButton")
+        .addEventListener("click", function () {
+          window.AgentSplit.failTask({
+            reason: "user_clicked_fail"
+          })
+
+          alert("Task failed event sent")
+        })
+
+      document
+        .getElementById("changeRouteButton")
+        .addEventListener("click", function () {
+          history.pushState({}, "", "/demo-route?step=2")
+
+          window.AgentSplit.track("demo_route_button_clicked", {
+            route: "/demo-route?step=2"
+          })
+        })
+
+      document
+        .getElementById("feedbackForm")
+        .addEventListener("submit", function (event) {
+          event.preventDefault()
+
+          var formData = new FormData(event.target)
+
+          window.AgentSplit.track("feedback_submitted", {
+            email: formData.get("email"),
+            feedbackLength: String(formData.get("feedback") || "").length
+          })
+
+          alert("Feedback submitted")
+          event.target.reset()
+        })
+    </script>
+  </body>
+</html>`
+}
 
 export default function Home() {
+  const [currentCampaign, setCurrentCampaign] = useState<any>(null)
+  const [isError, setError] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    fetch("/api/current-campaign")
+      .then((res) => res.json())
+      .then((data) => setCurrentCampaign(data))
+      .catch((err) => console.error("current-campaign error:", err))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    if (loading) return
+    if (currentCampaign.status == 404) {
+      setError(true)
+      return
+    }
+
+    const sessionId = new URLSearchParams(window.location.search).get("sessionId")
+
+    if (!sessionId) {
+      console.error("sessionId is missing in parent URL")
+      return
+    }
+
+    if (iframeRef.current) {
+      iframeRef.current.srcdoc = createIframeHtml(sessionId)
+      // iframeRef.current.src = currentCampaign?.variant.link + "?campaignId=" + currentCampaign?.campaign_id + "&apiUrl=http://localhost:3000/api"
+    }
+  }, [currentCampaign])
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+      <header style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "0 20px",
+        height: 48,
+        minHeight: 48,
+        background: "#fff",
+        borderBottom: "1px solid #e5e5e5",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        fontSize: 13,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <span style={{ fontWeight: 800, fontSize: 16, color: "#111", letterSpacing: "-0.02em" }}>tentiq</span>
+
+          <span style={{
+            background: "#fb923c",
+            color: "#fff",
+            padding: "2px 10px",
+            borderRadius: 4,
+            fontSize: 11,
+            fontWeight: 700,
+          }}>E-commerce</span>
+        </div>
+
+        {/* Right: actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button style={{
+            border: "1px solid #e0e0e0",
+            borderRadius: 8,
+            padding: "5px 14px",
+            background: "#fff",
+            fontSize: 12,
+            color: "#888",
+            cursor: "pointer",
+          }}>AI watching...</button>
+
+          <span style={{
+            background: "#dcfce7",
+            color: "#16a34a",
+            padding: "4px 12px",
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 600,
+          }}>$1.50 earned</span>
+
+          <button style={{
+            border: "1px solid #e0e0e0",
+            borderRadius: 8,
+            padding: "5px 14px",
+            background: "#fff",
+            fontSize: 12,
+            color: "#333",
+            cursor: "pointer",
+            fontWeight: 500,
+          }}>End session</button>
+
+          <span style={{ color: "#aaa", fontSize: 12 }}>— Home</span>
+        </div>
+      </header>
+
+      {/* ─── Task instruction bar ─── */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "12px 20px",
+        background: "#fafafa",
+        borderBottom: "1px solid #e5e5e5",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          {/* checkbox icon */}
+          <div style={{
+            width: 20,
+            height: 20,
+            border: "2px solid #ccc",
+            borderRadius: 4,
+            marginTop: 2,
+            flexShrink: 0,
+          }} />
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#111" }}>
+              {currentCampaign?.task}
+            </div>
+          </div>
+        </div>
+        <button style={{
+          border: "1px solid #ddd",
+          borderRadius: 8,
+          padding: "6px 18px",
+          background: "#fff",
+          fontSize: 13,
+          color: "#555",
+          cursor: "pointer",
+          fontWeight: 500,
+          flexShrink: 0,
+        }}>Skip</button>
+      </div>
+
+      {!isError && !loading && (
+        <iframe
+          ref={iframeRef}
+          style={{ flex: 1, width: "100%", border: "none" }}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+      )}
+      {isError && (
+        <div style={{ flex: 1, width: "100%", border: "none" }}>
+          <h1>Error</h1>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      )}
     </div>
-  );
+  )
 }
