@@ -56,7 +56,12 @@ export default function Home() {
     }
 
     if (iframeRef.current) {
-      iframeRef.current.src = currentCampaign?.variant.link + "?campaignId=" + currentCampaign?.campaign_id + "&apiUrl=http://178.104.210.8:8001/api"
+      const iframeUrl = new URL(currentCampaign.variant.link)
+      iframeUrl.searchParams.set("campaignId", currentCampaign.campaign_id)
+      iframeUrl.searchParams.set("variant", currentCampaign.variant.name || "")
+      iframeUrl.searchParams.set("sessionId", sessionId)
+      iframeUrl.searchParams.set("apiUrl", `${window.location.origin}/api`)
+      iframeRef.current.src = iframeUrl.toString()
     }
   }, [currentCampaign])
 
