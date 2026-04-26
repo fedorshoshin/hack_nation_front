@@ -56,7 +56,7 @@ export default function Home() {
     }
 
     if (iframeRef.current) {
-      iframeRef.current.src = currentCampaign?.variant.link + "?campaignId=" + currentCampaign?.campaign_id + "&apiUrl=http://localhost:3000/api"
+      iframeRef.current.src = currentCampaign?.variant.link + "?campaignId=" + currentCampaign?.campaign_id + "&apiUrl=http://178.104.210.8:8001/api"
     }
   }, [currentCampaign])
 
