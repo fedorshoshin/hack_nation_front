@@ -1,5 +1,18 @@
 import { NextResponse } from 'next/server'
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  })
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -23,11 +36,11 @@ export async function POST(request: Request) {
       })
     }
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true }, { headers: corsHeaders })
   } catch {
     return NextResponse.json(
       { ok: false, error: 'Invalid event payload' },
-      { status: 400 }
+      { status: 400, headers: corsHeaders }
     )
   }
 }
