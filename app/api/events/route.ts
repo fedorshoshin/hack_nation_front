@@ -24,6 +24,7 @@ export async function POST(request: Request) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           campaign_id: body.campaign_id || body.campaignId,
+          variant_name: body.variant_name || body.payload?.variant_name,
           user_id: "1",
           metrics: {
             clicks: body.metrics?.clicks ?? 0,

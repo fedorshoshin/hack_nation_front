@@ -167,6 +167,18 @@ export default function Home() {
         }}>Skip</button>
       </div>
 
+      {loading && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", background: "#fff" }}>
+          <svg style={{ width: 40, height: 40, color: "#fb923c" }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 12a9 9 0 11-6.219-8.56" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
+            </path>
+          </svg>
+          <div style={{ marginTop: 16, color: "#555", fontSize: 14, fontWeight: 500, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
+            Loading...
+          </div>
+        </div>
+      )}
       {!isError && !loading && (
         <iframe
           ref={iframeRef}
