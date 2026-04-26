@@ -15,7 +15,8 @@ export async function OPTIONS() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
+    const text = await request.text()
+    const body = JSON.parse(text)
     console.log('AgentSplit event:', body)
 
     if (body.event === "task_completed") {
