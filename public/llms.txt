@@ -1,182 +1,123 @@
 # Tentiq
 
-> UX testing platform that connects websites needing real user feedback with human testers and AI agents. Instant Lightning Network payouts after every verified session.
+> Hackathon UX A/B testing platform for AI agents, developers, and human testers. Agents create funded campaigns, testers run assigned variants, and Tentiq returns structured metrics so the agent can choose the best UX.
 
-Tentiq lets you (as an AI agent or on behalf of a product team) create UX test campaigns, fund them via Lightning, and receive structured feedback from real human testers — verified automatically, paid instantly.
+Tentiq lets an AI coding agent submit pages that need A/B testing while a service is being developed. Human testers receive a campaign, complete a task on one random variant, and the platform records UX metrics such as clicks, duration, completion, friction score, and per-variant results.
 
-## Core concepts
+This is a live hackathon prototype. Prefer the OpenAPI schema for exact request validation.
 
-**Campaign** — a funded UX test job. You define the task, the URL variants to test, the number of sessions, and the budget in satoshis.
+## Public URLs
 
-**Variant** — a specific URL/version under test (e.g. "Checkout A" vs "Checkout B"). Every campaign has at least one variant.
-
-**Session** — one tester completing the task on one variant. Each session is AI-verified in real time; payout fires the moment verification passes.
-
-**Payment** — campaigns are funded upfront via a Lightning invoice. You generate the invoice, pay it (e.g. via NWC), and the budget unlocks for testers.
-
-**Payment hash / preimage** — standard Lightning proof-of-payment. Save the preimage returned by your wallet; you can use the hash to poll campaign payment status.
-
----
-
-## API base URL
-
-```
-http://178.104.210.8:8000
+```text
+Backend API:       http://178.104.210.8:8000
+OpenAPI JSON:      http://178.104.210.8:8000/openapi.json
+Interactive docs:  http://178.104.210.8:8000/docs
+Tester frontend:   http://178.104.210.8:8001/?sessionId=<session-id>
+Static demo app:   http://178.104.210.8:8002/index_new.html
+Browser SDK:       http://178.104.210.8:8000/peach-sdk.js
+LLM guide:         http://178.104.210.8:8000/llms.txt
 ```
 
-Full OpenAPI spec: `GET /openapi.json`
-Interactive docs: `GET /docs`
+The static app directory also serves `peach-sdk.js` and `llms.txt` on port `8002`.
 
----
+## Core Concepts
 
-## Workflow for an AI agent (happy path)
+**Campaign**: A paid UX test created by an agent. It contains URL variants, a budget in satoshis, requested number of tests, a success event, and a tester task.
 
+**Variant**: One URL/version of the tested page. Metrics are grouped by variant so the agent can compare A/B performance.
+
+**Tester assignment**: `GET /api/user/current_variant` returns one campaign the current prototype user has not used yet, plus one random variant from that campaign.
+
+**Completion**: `POST /api/user/completed_task` records task metrics, links them to the variant, and sends a Lightning payout to the tester wallet.
+
+**Payment**: Campaign creation returns a Lightning invoice. The agent pays it, then calls `POST /api/agent/payment_status`. Campaigns become available to testers only after payment status is `settled`.
+
+## Agent Workflow
+
+```text
+1. POST /api/agent/campaigns
+   Create an A/B test campaign and receive a Lightning invoice.
+
+2. Pay payment_invoice with a Lightning/NWC wallet.
+
+3. POST /api/agent/payment_status
+   Confirm that the campaign invoice is settled.
+
+4. Human testers use the runner at http://178.104.210.8:8001/?sessionId=<id>.
+
+5. GET /api/agent/completed_campaign
+   Poll for progress and final analytics. When completed_tests >= required_tests,
+   successed is true and per-variant metrics are ready for the AI agent.
 ```
-1. POST /api/agent/campaigns           → create campaign, receive bolt11 invoice
-2. Pay the invoice via NWC             → get preimage (proof of payment)
-3. POST /api/agent/payment_status      → confirm payment_status is "settled"
-4. Wait / poll for sessions to run
-5. GET  /api/agent/completed_campaign  → read back UX metrics and per-variant results
-```
 
----
+## Agent API
 
-## Endpoints
+### Create Campaign
 
-### Create campaign
-
-```
+```http
 POST /api/agent/campaigns
 Content-Type: application/json
 ```
 
-Request body:
+Request:
 
 ```json
 {
   "variants": [
-    { "name": "Variant A", "link": "http://yoursite.com/page-a" }
+    {
+      "name": "Variant A",
+      "link": "http://178.104.210.8:8002/index_new.html"
+    },
+    {
+      "name": "Variant B",
+      "link": "https://example.com/checkout-b"
+    }
   ],
   "budget": 1000,
   "number_of_tests": 5,
   "success_event": "task_completed",
-  "task": "Find the cheapest business checking account and reach the comparison page. Stop before signing up."
+  "task": "Open the homepage, try to complete checkout, and report anything confusing. Stop after reaching the final confirmation screen."
 }
 ```
 
-| Field | Type | Notes |
-|---|---|---|
-| `variants` | array | At least 1. Each has `name` (string) and `link` (URL). |
-| `budget` | integer > 0 | Total satoshis allocated. Divided across testers. |
-| `number_of_tests` | integer > 0 | How many tester sessions to run. |
-| `success_event` | string | Event name that marks task completion (e.g. `"task_completed"`). |
-| `task` | string | Plain-English instruction shown to testers. Be specific about the goal and where to stop. |
-
-Response (200):
+Response:
 
 ```json
 {
-  "campaign_id": "d7c03b8d-0374-410e-be70-2b2aa75e0cac",
   "id": "d7c03b8d-0374-410e-be70-2b2aa75e0cac",
-  "variants": [{ "id": "47f3bff9-...", "name": "Variant A", "link": "https://..." }],
+  "campaign_id": "d7c03b8d-0374-410e-be70-2b2aa75e0cac",
+  "variants": [
+    {
+      "id": "47f3bff9-0000-0000-0000-000000000000",
+      "name": "Variant A",
+      "link": "http://178.104.210.8:8002/index_new.html"
+    }
+  ],
   "budget": 1000,
   "number_of_tests": 5,
   "success_event": "task_completed",
-  "task": "...",
+  "task": "Open the homepage...",
   "payment_invoice": "lnbc...",
   "payment_hash": "31db7a53acff9e2d...",
   "payment_status": "pending"
 }
 ```
 
-**Save `campaign_id`, `payment_invoice`, and `payment_hash`** — you need all three for the next steps.
+Save `campaign_id`, `payment_invoice`, and `payment_hash`.
 
----
+### Check Campaign Payment
 
-### Pay the invoice (NWC)
-
-Tentiq campaigns are funded via [Lightning Network](https://lightning.network). The recommended approach for agents is **Nostr Wallet Connect (NWC)**.
-
-#### NWC connection string format
-
-```
-nostr+walletconnect://<wallet_pubkey>?relay=<wss_relay>&secret=<your_privkey>&lud16=<lud16>
-```
-
-#### Node.js payment example
-
-```js
-const { nip47, nip04, getPublicKey } = require('nostr-tools');
-const { hexToBytes } = require('@noble/hashes/utils.js');
-
-async function payInvoice(nwcString, bolt11) {
-  const url = new URL(nwcString);
-  const walletPubkey = url.host;
-  const relays = url.searchParams.getAll('relay');
-  const secret = url.searchParams.get('secret');
-  const secretBytes = hexToBytes(secret);
-  const ourPubkey = getPublicKey(secretBytes);
-
-  const requestEvent = await nip47.makeNwcRequestEvent(walletPubkey, secretBytes, bolt11);
-
-  for (const relay of relays) {
-    try {
-      return await sendToRelay(relay, requestEvent, ourPubkey, secret);
-    } catch {}
-  }
-  throw new Error('All relays failed');
-}
-
-function sendToRelay(relayUrl, requestEvent, ourPubkey, secret) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(relayUrl);
-    const subId = 'pay-' + Date.now();
-    const timer = setTimeout(() => { ws.close(); reject(new Error('Timeout')); }, 30000);
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify(["REQ", subId, {
-        kinds: [23195], "#p": [ourPubkey], since: Math.floor(Date.now()/1000) - 10
-      }]));
-      ws.send(JSON.stringify(["EVENT", requestEvent]));
-    };
-
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg[0] === 'EVENT' && msg[2]?.kind === 23195) {
-        clearTimeout(timer);
-        ws.close();
-        const resp = JSON.parse(nip04.decrypt(secret, msg[2].pubkey, msg[2].content));
-        resp.error ? reject(new Error(resp.error.message)) : resolve(resp.result);
-      }
-    };
-
-    ws.onerror = (e) => { clearTimeout(timer); reject(e); };
-  });
-}
-```
-
-Successful payment returns:
-
-```json
-{
-  "preimage": "1ef7b9a6ab713383c5e5f27271e7fdfbf3bf03174d8f74018b52b039c2a5c78b",
-  "fees_paid": 0
-}
-```
-
----
-
-### Check payment status
-
-```
+```http
 POST /api/agent/payment_status
 Content-Type: application/json
 ```
 
+Request:
+
 ```json
 {
   "campaign_id": "d7c03b8d-0374-410e-be70-2b2aa75e0cac",
-  "payment_hash": "31db7a53acff9e2d3a923afbf27ddf684173482120f8e2370cb25d36056337bd"
+  "payment_hash": "31db7a53acff9e2d..."
 }
 ```
 
@@ -190,81 +131,78 @@ Response:
 }
 ```
 
-`payment_status` values: `"pending"` → `"settled"` (active) or `"expired"`.
+Only settled campaigns are returned to testers.
 
-Poll until `"settled"` before expecting tester sessions to begin.
+### Get One Available Settled Campaign
 
----
-
-### Create invoice separately (optional)
-
-If the campaign response does not include a `payment_invoice`, or you need to top up:
-
-```
-POST /payments/invoices
-Content-Type: application/json
-```
-
-```json
-{
-  "campaign_id": "d7c03b8d-0374-410e-be70-2b2aa75e0cac",
-  "amount_sats": 1000,
-  "tests_purchased": 5,
-  "commission_rate": 0.1
-}
-```
-
-`commission_rate` defaults to `0.1` (10%). Must be in `[0.0, 1.0)`.
-
----
-
-### List / get campaigns
-
-```
+```http
 GET /api/agent/campaigns
 ```
 
-Returns the current agent's active campaign(s).
+Returns the oldest settled campaign with its variants. This is primarily an internal/prototype helper.
 
----
+### Poll Campaign Completion And Analytics
 
-### Get completed campaigns + statistics
-
-```
+```http
 GET /api/agent/completed_campaign
 ```
 
-Returns an array of all finished campaigns with aggregated UX metrics. Use this to read back results after sessions complete.
+Returns all settled campaigns with completion progress and metrics.
 
-Response (200) — array of:
+Example response:
 
 ```json
 [
   {
     "campaign_id": "74492beb-aa07-4d52-8930-a0c664489349",
     "successed": true,
-    "completed_tests": 1,
-    "required_tests": 1,
+    "completed_tests": 5,
+    "required_tests": 5,
     "success_event": "task_completed",
-    "task": "Open the homepage and report any broken links.",
+    "task": "Open the homepage and test checkout.",
     "metrics": {
-      "numeric_averages": { "clicks": 4.5, "duration_ms": 32000, "friction_score": 1.2 },
-      "numeric_totals":   { "clicks": 9.0, "duration_ms": 64000, "friction_score": 2.4 },
+      "numeric_averages": {
+        "clicks": 6.4,
+        "duration_ms": 42000,
+        "friction_score": 0.8
+      },
+      "numeric_totals": {
+        "clicks": 32,
+        "duration_ms": 210000,
+        "friction_score": 4
+      },
       "raw": [
-        { "clicks": 4, "completed": true, "duration_ms": 31000, "friction_score": 1 },
-        { "clicks": 5, "completed": true, "duration_ms": 33000, "friction_score": 1 }
+        {
+          "clicks": 6,
+          "completed": true,
+          "duration_ms": 39000,
+          "friction_score": 1
+        }
       ]
     },
     "variants": [
       {
         "variant_id": "e4fc8d47-0a75-4a71-8547-1291f4947b6d",
         "variant_name": "Variant A",
-        "variant_link": "https://yoursite.com/page-a",
-        "completed_tests": 1,
-        "numeric_averages": { "clicks": 4.5, "duration_ms": 32000, "friction_score": 1.2 },
-        "numeric_totals":   { "clicks": 9.0, "duration_ms": 64000, "friction_score": 2.4 },
+        "variant_link": "http://178.104.210.8:8002/index_new.html",
+        "completed_tests": 3,
+        "numeric_averages": {
+          "clicks": 5.3,
+          "duration_ms": 38000,
+          "friction_score": 0.3
+        },
+        "numeric_totals": {
+          "clicks": 16,
+          "duration_ms": 114000,
+          "friction_score": 1
+        },
         "metrics": [
-          { "clicks": 4, "completed": true, "duration_ms": 31000, "friction_score": 1 }
+          {
+            "clicks": 5,
+            "completed": true,
+            "duration_ms": 37000,
+            "friction_score": 0
+          }
         ]
       }
     ]
@@ -272,267 +210,223 @@ Response (200) — array of:
 ]
 ```
 
-| Field | Meaning |
-|---|---|
-| `successed` | `true` if `completed_tests >= required_tests` and the success event was triggered |
-| `completed_tests` | Sessions that reached the success event |
-| `required_tests` | Sessions requested when creating the campaign |
-| `metrics.numeric_averages` | Per-session averages across all testers (clicks, duration, friction) |
-| `metrics.numeric_totals` | Summed totals across all testers |
-| `metrics.raw` | One object per session — the raw metric payload submitted by each tester |
-| `variants[].metrics` | Same per-session raw data scoped to a single variant |
+Interpretation:
 
-A campaign only appears here once at least one session has completed. Campaigns still awaiting testers remain in `GET /api/agent/campaigns`.
+- `successed` is `true` when `completed_tests >= required_tests`.
+- `metrics.numeric_averages` summarizes numeric fields across the whole campaign.
+- `variants[]` groups the same metrics by tested variant.
+- Lower `duration_ms`, lower `friction_score`, fewer unnecessary `clicks`, and higher `completed` rates usually indicate a better UX. The agent should compare these values per variant.
 
----
+## Tester API
 
-## Browser SDK (AgentSplit) — embed on the site under test
+### Get Current Variant
 
-The AgentSplit SDK is a small browser script that site owners add to the pages being tested. It captures tester behaviour and streams events back to Tentiq in real time.
-
-### Installation
-
-```html
-<script src="https://cdn.tentiq.com/sdk/v1/agentsplit.js"></script>
+```http
+GET /api/user/current_variant
 ```
 
-Sets `window.AgentSplit`. No build step or npm install required.
+Prototype behavior: the backend currently assumes `user_id = "1"`. It returns one campaign that user has not used before and assigns a random variant.
 
-### Initialise
+Response:
 
-Call `AgentSplit.init()` once per page, as early as possible:
+```json
+{
+  "campaign_id": "74492beb-aa07-4d52-8930-a0c664489349",
+  "variant": {
+    "id": "e4fc8d47-0a75-4a71-8547-1291f4947b6d",
+    "name": "Variant A",
+    "link": "http://178.104.210.8:8002/index_new.html"
+  },
+  "success_event": "task_completed",
+  "task": "Open the homepage and test checkout."
+}
+```
+
+### Complete Task
+
+```http
+POST /api/user/completed_task
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "campaign_id": "74492beb-aa07-4d52-8930-a0c664489349",
+  "user_id": "1",
+  "variant_id": "e4fc8d47-0a75-4a71-8547-1291f4947b6d",
+  "variant_name": "Variant A",
+  "metrics": {
+    "clicks": 8,
+    "completed": true,
+    "duration_ms": 55000,
+    "friction_score": 1
+  },
+  "success_event": "task_completed"
+}
+```
+
+Behavior:
+
+- Requires campaign `payment_status` to be `settled`.
+- Stores completion metrics linked to `campaign_id`, `variant_id`, and/or `variant_name`.
+- Pays the tester wallet `nwc1777195149882@getalby.com`.
+- Payout amount is `campaign.budget // campaign.number_of_tests` sats.
+- Repeated paid completions for the same `campaign_id + user_id` return the existing paid completion to avoid duplicate payout.
+
+Response includes payout state:
+
+```json
+{
+  "id": "completion-id",
+  "campaign_id": "74492beb-aa07-4d52-8930-a0c664489349",
+  "user_id": "1",
+  "variant_id": "e4fc8d47-0a75-4a71-8547-1291f4947b6d",
+  "variant_name": "Variant A",
+  "metrics": {
+    "clicks": 8,
+    "completed": true,
+    "duration_ms": 55000,
+    "friction_score": 1
+  },
+  "success_event": "task_completed",
+  "payout_sats": 200,
+  "payout_status": "paid",
+  "payout_preimage": "preimage...",
+  "payout_ln_address": "nwc1777195149882@getalby.com"
+}
+```
+
+## Frontend Runner
+
+Open:
+
+```text
+http://178.104.210.8:8001/?sessionId=<unique-session-id>
+```
+
+The runner:
+
+1. Calls `/api/current-campaign` on the Next.js frontend.
+2. That proxies to backend `GET /api/user/current_variant`.
+3. Loads the returned variant URL in an iframe.
+4. Adds query params: `campaignId`, `variant`, `sessionId`, and `apiUrl`.
+5. Receives SDK `postMessage` events from the iframe.
+6. On `task_completed`, posts metrics to backend `POST /api/user/completed_task`.
+
+## Browser SDK
+
+Use the current SDK URL:
+
+```html
+<script src="http://178.104.210.8:8000/peach-sdk.js"></script>
+```
+
+The SDK defines `window.AgentSplit`.
+
+Initialize it on the tested page:
 
 ```html
 <script>
   AgentSplit.init({
-    campaignId:   "d7c03b8d-0374-410e-be70-2b2aa75e0cac",
-    sessionId:    "user-or-agent-session-uuid",
-    variant:      "Variant A",
-    apiUrl:       "http://178.104.210.8:8000/sdk",
+    campaignId: new URLSearchParams(location.search).get("campaignId"),
+    sessionId: new URLSearchParams(location.search).get("sessionId"),
+    variant_name: new URLSearchParams(location.search).get("variant"),
+    apiUrl: new URLSearchParams(location.search).get("apiUrl"),
     successEvent: "task_completed",
-    debug:        false
+    debug: false
   });
 </script>
 ```
 
-| Field | Required | Notes |
-|---|---|---|
-| `campaignId` | yes | ID from campaign creation |
-| `sessionId` | yes | Any unique string per tester; use UUID |
-| `variant` / `variant_name` | yes | Either key accepted; must match a variant name from the campaign |
-| `apiUrl` | no | If set, events are POSTed to `apiUrl/events`. Omit to use postMessage only. |
-| `successEvent` | no | Passed through on `completeTask()` so the server can match it |
-| `debug` | no | Enables `[AgentSplit]` console logs |
+Auto-tracked behavior:
 
-Events queued before `init()` are flushed automatically once init runs.
+- `page_view`
+- `click`
+- `form_submit`
+- `javascript_error`
+- `unhandled_rejection`
+- `route_change`
 
----
+Current metric snapshot:
 
-### Auto-tracked events
+```json
+{
+  "clicks": 14,
+  "completed": true,
+  "duration_ms": 47200,
+  "friction_score": 0
+}
+```
 
-No extra code needed. The SDK attaches listeners on init:
-
-| Event | Trigger | Notable payload fields |
-|---|---|---|
-| `page_view` | `init()` called | `path`, `search`, `title` |
-| `click` | Any element click | `element` (tag, id, class, text, aria-label, data-testid), `x`, `y` |
-| `form_submit` | Any `<form>` submit | `element`, `action`, `method` |
-| `javascript_error` | `window.onerror` | `message`, `filename`, `line`, `column` — also increments `friction_score` |
-| `unhandled_rejection` | Unhandled promise rejection | `reason` — also increments `friction_score` |
-| `route_change` | `pushState` / `replaceState` / `popstate` | `method`, `path`, `search` |
-
----
-
-### Manual API
-
-#### `AgentSplit.completeTask(payload?)`
-
-Call when the tester reaches the success condition. Sets `metrics.completed = true`, fires `task_completed`, and triggers tester payout.
+Call this when the tester reaches the goal:
 
 ```js
 AgentSplit.completeTask({
   final_url: window.location.href,
-  note: "Reached comparison page without errors"
+  note: "Reached confirmation page"
 });
 ```
 
-#### `AgentSplit.failTask(payload?)`
-
-Call when the tester hits a hard blocker or gives up.
-
-```js
-AgentSplit.failTask({ reason: "Checkout button unresponsive" });
-```
-
-#### `AgentSplit.track(eventName, payload?)`
-
-Send any custom event.
-
-```js
-AgentSplit.track("filter_applied", { filter: "price_asc", results: 12 });
-AgentSplit.track("modal_opened",   { modal: "signup" });
-```
-
-#### `AgentSplit.identify(payload?)`
-
-Attach tester metadata to the session.
-
-```js
-AgentSplit.identify({ age_range: "25-34", country: "DE" });
-```
-
-#### `AgentSplit.getMetrics()`
-
-Returns the current in-session snapshot:
-
-```js
-{ clicks: 14, completed: true, duration_ms: 47200, friction_score: 0 }
-```
-
-`friction_score` is incremented automatically on every JS error or unhandled rejection.
-
----
-
-### Event payload shape
-
-Every event — auto or manual — is sent with this envelope:
+Every SDK event is sent by `postMessage` to the parent iframe runner:
 
 ```json
 {
-  "campaign_id":   "d7c03b8d-...",
-  "campaignId":    "d7c03b8d-...",
-  "sessionId":     "abc-123",
-  "variant":       "Variant A",
-  "variant_name":  "Variant A",
-  "event":         "click",
-  "payload":       { "element": { "tag": "BUTTON", "text": "Compare plans" }, "x": 420, "y": 310 },
-  "metrics":       { "clicks": 3, "completed": false, "duration_ms": 8400, "friction_score": 0 },
-  "success_event": "task_completed",
-  "page": {
-    "href": "https://yoursite.com/accounts", "pathname": "/accounts",
-    "search": "", "title": "Business Accounts", "referrer": ""
-  },
-  "viewport":  { "width": 1440, "height": 900 },
-  "userAgent": "Mozilla/5.0 ...",
-  "timestamp": "2026-04-26T12:34:56.000Z"
+  "source": "agentsplit",
+  "type": "event",
+  "data": {
+    "campaign_id": "campaign-id",
+    "campaignId": "campaign-id",
+    "sessionId": "session-id",
+    "variant": "Variant A",
+    "variant_name": "Variant A",
+    "event": "task_completed",
+    "payload": {},
+    "metrics": {
+      "clicks": 8,
+      "completed": true,
+      "duration_ms": 55000,
+      "friction_score": 1
+    },
+    "success_event": "task_completed"
+  }
 }
 ```
 
-Events are delivered two ways simultaneously:
-- **`postMessage`** to the parent `window` — used when the site runs inside a Tentiq iframe runner. Shape: `{ source: "agentsplit", type: "event", data: <payload> }`.
-- **`fetch POST`** to `apiUrl/events` — direct API delivery when `apiUrl` is set.
+If `apiUrl` is set, the SDK also posts to `apiUrl + "/events"`. In the current runner this points at the frontend API (`http://178.104.210.8:8001/api/events`).
 
----
+## Payment Notes
 
-## REST SDK endpoints (for agent runners calling the API directly)
+- Campaign invoices are created by backend `POST /api/agent/campaigns`.
+- The backend uses a platform NWC wallet to create invoices and send tester payouts.
+- Testers are paid to `nwc1777195149882@getalby.com` in the current prototype.
+- `POST /payments/invoices` exists as an older prototype endpoint and does not drive the main campaign funding flow. Use `POST /api/agent/campaigns` instead.
 
-Use these when an agent browses the site programmatically and calls the API instead of running a real browser with the JS SDK.
+## Health Check
 
-### Init session
-
-```
-POST /sdk/init
-```
-
-```json
-{ "campaignId": "<id>", "sessionId": "<uuid>", "variant": "Variant A" }
-```
-
-Response: `{ "session_id", "campaign_id", "variant", "internal_session_id" }`
-
-### Track event
-
-```
-POST /sdk/events
-```
-
-```json
-{
-  "campaignId": "<id>",
-  "sessionId":  "<uuid>",
-  "variant":    "Variant A",
-  "eventType":  "click",
-  "payload":    { "element": "button#compare" }
-}
-```
-
-### Complete task
-
-```
-POST /sdk/tasks/complete
-```
-
-```json
-{
-  "campaignId": "<id>",
-  "sessionId":  "<uuid>",
-  "variant":    "Variant A",
-  "taskId":     "<task-id>",
-  "message":    "Reached the comparison page successfully.",
-  "payload":    { "final_url": "https://yoursite.com/accounts/compare" }
-}
-```
-
-Response: `{ "ok": true, "task_id": "...", "session_id": "..." }`
-
----
-
-## Error handling
-
-All validation errors return HTTP 422 with:
-
-```json
-{
-  "detail": [
-    { "loc": ["body", "budget"], "msg": "value is not a valid integer", "type": "type_error" }
-  ]
-}
-```
-
-NWC payment errors are returned in the decrypted response:
-
-```json
-{ "error": { "code": "INSUFFICIENT_BALANCE", "message": "Not enough funds" }, "result_type": "pay_invoice" }
-```
-
-Common NWC error codes: `INSUFFICIENT_BALANCE`, `PAYMENT_FAILED`, `NOT_IMPLEMENTED`, `UNAUTHORIZED`, `INTERNAL`.
-
----
-
-## Writing good tasks
-
-Tasks are shown verbatim to human testers. Be explicit:
-
-```
-✓ "Find the cheapest business checking account. Navigate to the comparison page and stop — do not sign up."
-✗ "Test the checkout"
-```
-
-Guidelines:
-- State the goal and the stopping point.
-- Mention if the tester should report friction, confusion, or errors.
-- Keep it under 3 sentences — testers scan quickly.
-- Avoid site-specific jargon the tester may not know.
-
----
-
-## Satoshi budgeting
-
-| Sessions | Sats each | Total budget |
-|---|---|---|
-| 1 | 100 | 100 |
-| 5 | 200 | 1 000 |
-| 10 | 500 | 5 000 |
-| 50 | 500 | 25 000 |
-
-Budget is split evenly across sessions. Tentiq takes a commission (default 10%) from the total.
-
----
-
-## Health check
-
-```
+```http
 GET /health
 ```
 
-Returns `{ "status": "ok" }` when the API is reachable.
+Response:
+
+```json
+{ "status": "ok" }
+```
+
+## Good Task Prompt Style
+
+Tasks are displayed directly to testers. Good tasks are short, specific, and include a stopping condition.
+
+Good:
+
+```text
+Find the cheapest business checking account. Navigate to the comparison page and stop before signing up. Report anything confusing.
+```
+
+Bad:
+
+```text
+Test the checkout.
+```
